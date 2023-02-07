@@ -10,6 +10,14 @@ var (
 	ErrAttributeNotFound    = errors.New("Attribute not found")
 )
 
+var (
+	ErrTransactionStopped   = errors.New("transaction is stopped")
+	ErrTransactionNotExists = errors.New("transaction not exists")
+	ErrTransactionExists    = errors.New("transaction exists with same id")
+
+	ErrAgentClose = errors.New("agent is closed")
+)
+
 type DecodeErr struct {
 	Place   DecodeErrPlace
 	Message string

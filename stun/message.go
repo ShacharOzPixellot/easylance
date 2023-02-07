@@ -3,6 +3,7 @@ package stun
 import (
 	"crypto/rand"
 	"fmt"
+	"io"
 )
 
 const (
@@ -36,6 +37,19 @@ type Message struct {
 	Length        uint32
 	TransactionID [TransactionIDSize]byte
 	Attributes    Attributes
+	Raw           []byte
+}
+
+func (m *Message) WriteTransactionID() {
+	copy(m.Raw[8:messageHeaderSize], m.TransactionID[:])
+}
+
+func (m *Message) NewTransactionID() error {
+	_, err := io.ReadFull(rand.Reader, m.TransactionID[:])
+	if err != nil {
+		m.WriteTransactionID()
+	}
+	return nil
 }
 
 func (m *Message) grow(size int) {
@@ -51,7 +65,7 @@ func (m *Message) grow(size int) {
 func (m *Message) Add(t AttrType, v []byte) {
 	allocSize := attributeHeaderSize + len(v)
 	oldSize := messageHeaderSize + m.Length
-	newSize := oldSize + allocSize
+	newSize := int(oldSize) + allocSize
 	m.grow(newSize)
 	m.Raw = m.Raw[:newSize]
 	m.Length += uint32(allocSize)
@@ -60,7 +74,7 @@ func (m *Message) Add(t AttrType, v []byte) {
 	value := buf[attributeHeaderSize:]
 	attr := RawAttribute{
 		Type:   t,
-		Length: uint32(len(v)),
+		Length: uint16(len(v)),
 		Value:  value,
 	}
 
@@ -69,9 +83,9 @@ func (m *Message) Add(t AttrType, v []byte) {
 	copy(value, v)
 
 	if attr.Length%padding != 0 {
-		bytesToAdd := nearestPaddingValueLength(len(v)) - len(v)
+		bytesToAdd := nearestPaddedValueLength(len(v)) - len(v)
 		newSize += bytesToAdd
-		m.grow(last)
+		m.grow(newSize)
 		buf = m.Raw[newSize-bytesToAdd : newSize]
 
 		for i := range buf {
@@ -84,6 +98,11 @@ func (m *Message) Add(t AttrType, v []byte) {
 
 	m.Attributes = append(m.Attributes, attr)
 	m.WriteLength()
+}
+
+func (m *Message) WriteLength() {
+	m.grow(4)
+	bin.PutUint16(m.Raw[2:4], uint16(m.Length))
 }
 
 func (m *Message) Decode() error {
@@ -100,7 +119,7 @@ func (m *Message) Decode() error {
 		fullSize    = messageHeaderSize + size
 	)
 
-	if cookie != magicCookie {
+	if cookie != bin.Uint16(magicCookie) {
 		msg := fmt.Sprint("magic cookie %x is invaild, expect value is %x", cookie, magicCookie)
 		return newDecodeErr("message", "cookie", msg)
 	}
